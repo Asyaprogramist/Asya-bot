@@ -3,9 +3,14 @@ import discord
 from discord.ext import commands
 from dotenv import load_dotenv
 import re 
-
+import aiosqlite
 load_dotenv()
 TOKEN = str(os.getenv("DISCORDTOKEN"))
+
+         
+
+
+
 
 intents = discord.Intents.default()
 intents.members = True
@@ -97,6 +102,52 @@ async def on_message(message):
         await message.chennel.send(f'{message.author.mention}, не матерись!', delete_after=5)
         return
     await bot.process_commands(message)    
+
+DB_PATH = 'bot.db'
+
+async def init_db():
+    async with aiosqlite.connect(DB_PATH) as db:
+        await db.execute("""
+            CREATE TABLE IF NOT EXISTS levels (   guild_id INTEGER,
+                user_id INTEGER,
+                xp INTEGER DEFAULT 0,
+                level INTEGER DEFAULT 0,
+                last_xp_time REAL DEFAULT 0,
+                PRIMARY KEY (guild_id, user_id)
+                )
+            """)    
+        await db.commit()
+async def get_user(guild_id: int, user_id: int):
+    async with aiosqlite.connect(DB_PATH) as db:
+        async with db.execute( 
+           "SELECT xp, level, last_xp_time FROM levels WHERE guild_id=? AND user_id=?",
+           (guild_id, user_id)  
+        ) as cur:
+            row = await cur.fetchone()
+            if row is None:
+                await db.execute(
+                    "INSERT INTO levels (guild_id, user_id) VALUES (?, ?)",
+                    (guild_id, user_id)  
+                )
+    await db.commit()
+    return 0,0,0.0
+    return row
+async def update_user(guild_id: int, user_id: int, xp: int,  level: int, last_time: float):
+    async with aiosqlite.connect(DB_PATH) as db:
+        await db.execute(
+              "UPDATE levels SET xp=?, level=?, last_xp_time=? WHERE guild_id=? AND user_id=?",
+              (xp, level, last_time, guild_id,user_id)
+        )
+    await db.commit()
+async def get_leaderboard(guild_id: int, limit: int = 10):
+    async with aiosqlite.connect(DB_PATH) as db:
+        async with db.execute(
+            "SELECT user_id, xp, level FROM levels WHERE guild_id=? ORDER BY xp DESC LIMIT ?",
+            (guild_id, limit)
+        ) as cur:
+            return await cur.fetchall()
+    def xp_for_level(level: int) -> int:
+        return 5 * (level ** 2) + 50 * level + 100
 
 
 bot.run(TOKEN)
